@@ -1,0 +1,95 @@
+Since the divisor is a constant number (255), we have 2 design options (depending on the accuracy degree needed and the available resources): 
+	1- Use an approximate fast division-by 255 method using the expression A/255 ~= (A + 1 + (A>> 8)) >> 8. 
+	2- Implement the design using floating-point division.
+-------------------------------------------------------------------------------------------------------------------------
+Design 1: 
+//Divide by 255 with a fast division method using F32 adders and shifters.
+Input: 8-bit unsigned int A.
+Output: 32-bit floating-point Y.
+	a- Convert the 8-bit unsigned integer A to a single-precision floating-point representation following the steps shown in Appendix 1. Add the conversion result to A_F32.
+	b- Do floating-point addition REG_1 = A_F32 + 1, following the F32 addition pseudocode shown in Appendix 4. 
+	c- Shift right REG_2 = A_F32 >> 8. 
+	d- Do floating-point addition REG_3 = REG_1 + REG_2, following the F32 addition pseudocode shown in Appendix 4. 
+	e- Output Y = REG_3 >> 8. 
+-------------------------------------------------------------------------------------------------------------------------
+Design 2: 
+//Divide by 255 using F32 division.
+Input: 8-bit unsigned int A.
+Output: 32-bit floating-point Y.
+	a- Convert the 8-bit unsigned integer A to a single-precision floating-point representation following the steps shown in Appendix 1.
+	b- The divisor 255 32-bit floating-point representation is S_B=0, E_B=134, M_B=11111110000000000000000.
+
+	c- The F32 division pseudocode for 0<A<255:
+		Follow the steps in pseudocode shown in Appendix 2.
+
+	d- The division pseudocode for 0<=A<=255: 
+		Input: 32-bit floating-point A (S_A, E_A, M_A). 
+		Output: 32-bit floating-point Y (S_Y, E_Y, M_Y). 
+			a- Check if the input is 0, if yes, assign 32-bit floating-point 0 to the output Y. This helps to avoid unneeded processing by the division circuitry. 
+			if(M_A == 0 and E_A == 0) then 
+				M_Y=0, E_Y=0 
+			b-Check if the input equals divisor B (255), if yes, assign 32-bit floating-point 1 to the output Y. This helps to avoid any redundant processing done by the division circuitry 
+			else if (M_A == M_B and E_A == E_B) then 
+				M_Y = 0, E_Y= 127 
+			else then 
+				Follow the steps in pseudocode shown in Appendix 2.
+			end if
+------------------------------------------------------------------------------------------------------------------------- 
+Appendix 1: 
+Input: 8-bit unsigned number A. 
+Output: 32-bit floating-point number (sign S_A, mantissa M_A, exponent E_A). 
+	a- Initialize NUM_SIZE=8, BIAS=127, S_A=0. 
+	b- Calculate the leading zeros count for N: LZC=lzc(A). 
+	c- Shift left the leading zeros from A: A=A<<LZC. 
+	d- Mantiss M_A: M_A= (A== 0)? 0 : {A[0 : NUM_SIZE-2], 0} (concat A, excluding the normalization bit, pad the 23 bit mantissa with 0) 
+	e- Exponent E_A is: E_A= (A==0)? 0 : NUM_SIZE - 1 - LZC + BIAS 
+
+Appendix 2 :
+F32 Division pseudocode
+Input: 32-bit floating-point A (S_A, E_A, M_A). 
+Output: 32-bit floating-point Y (S_Y, E_Y, M_Y). 
+		a- Initialize the divisor's mantissa M_B, divisor's exponent E_B, and BIAS=127, output sign Y_S=0. 
+		b- Find the difference between the two exponents: E_Y = E_A - E_B.
+		c- E_Y = E_Y + BIAS. 
+		d- Divide the mantissa, M_A and M_B, including the implied/hidden bits, following the restoring division algorithm pseudocode shown in Appendix 3. The division result value is stored in the output Y mantissa M_Y.
+		e- Get the leading zeros count in the Y mantissa M_Y: LZC=lzc(M_Y). 
+		f- Shift left the leading zero's from M_Y: M_Y= M_Y<<LZC. f- Modify the output Y exponent to reflect the normalization done in the above step: E_Y= E_Y - LZC.
+
+Appendix 3:
+Restoring division algorithm pseudocode: 
+Input: Dividend A, Divisor B. 
+Output: Quotient Q. 
+	a- Initialize Reminder R: R=A, sequence counter SC=24 (23 bit mantissa + 1 implied bit). 
+	b- for i = 1 to i = SC do
+			R=2R-D. 
+			if R>=0 then 
+				Q[i]=1. 
+			else if R<0 then 
+				Q[i]=0, R=R+D. 
+			end if 
+		end for
+
+Appendix 4:
+F32 adder: 
+Input F32 A, F32 B. 
+Output F32 Y. 
+	a- Subtract the exponents E=E_A-E_B. 
+	b- Shift right the mantissa with the smaller exponent by E. 
+	c- Perform mantissa addition M_Y = M_A+M_B, considering the implied bits. 
+	d- If a carry is generated, right-shift the addition result and increment the exponent E_Y.
+
+
+
+-----------------------------------------------------------------------------------------------------------------
+Ans 1: 
+	a- Arragement 1: 
+		1- Use 2 mul_F32 units to compute (a*a) and (b*b). 
+		2- Use 1 sub_F32 unit to compute the result y = (a*a)-(b*b). 
+	b- Arrangement 2: 
+		1- Since a2-b2 = (a+b)*(a-b), we could use 1 abs_F32 unit to compute (a+b) and 1 sub_F32 unit to compute (a-b) and 1 mul_F32 unit to compute the result y = (a+b)*(a-b). 
+
+Ans 2:
+	Throughput, latency, footprint (resources usage), and power consumption. It depends on the design application and the implementation platform. If I am designing a portable device, for example, I would put power consumption and resource usage as my priorities. If I am designing a time-sensitive application, I would put latency and throughput as my priorities. 
+
+Ans 3: 
+	For arrangement 1, I would add a pipeline between the 2 mul_F32 multipliers and the sub_F32. This would help to optimize the critical path and increase the overall system throughput. I could also use a resource sharing scheme and use 1 mul_F32 unit to do the 2 multiplications sequentially, this would help to minimize the footprint.
